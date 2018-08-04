@@ -1,0 +1,117 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Receipt:
+
+    Please acknowledge receipt by signing this entire decrypted document,
+    including its signature, and publishing a new stand-alone signature.
+
+    This can be done using:
+    gpg --armor --detach-sign --sign-with <known key> disclosure.txt
+
+    The signature can be delivered in the same way that the gpg pubkey(s) were
+    originally posted.
+
+
+Summary:
+
+    A critical vulnerability exists in bitcoin-abc that would allow anyone to
+    bifurcate the Bitcoin Cash blockchain simply by sending an
+    otherwise-harmless transaction. As this is a bitcoin-abc bug, only
+    Bitcoin Cash is affected.
+
+    See commit 556a2f1f10138aee3b1b0e44ba038918661c9949. With this change,
+    the requirements for a signature's hash type were inadvertently loosened to
+    allow the third-most significant bit to be set. Because this allows
+    previously-invalid transactions to become valid, a valid block containing at
+    least one of these transactions would result in a hard-fork.
+
+    There have been additional changes to this code since its introduction, but
+    the bug is still present.
+
+
+Timeline:
+
+    Typical private disclosures would allow for one or more months before public
+    disclosure. In this case, the bug will need to be fixed before the 15 May
+    Bitcoin Cash hard-fork in order to avoid an unintended rule change that
+    would disagree with the proposed spec. With no action, even after the fork,
+    other Bitcoin Cash implementations could be made to diverge from
+    bitcoin-abc.
+
+    For those reasons, a public issue for this bug will be filed on or after
+    9 May unless either:
+    - The issue has been provably resolved in an officially released version of
+        bitcoin-abc
+    - A valid signed acknowledgement of this disclosure has been issued and a
+        reasonable reason for delay has been presented
+    
+    In either case, a public issue will be filed no later than 23:59 UTC on 13
+    May. A detailed report will be posted soon-after.
+
+
+Details:
+
+    Specifically, the change was:
+
+        -    uint32_t nHashType =
+        -        GetHashType(vchSig) & ~(SIGHASH_ANYONECANPAY | SIGHASH_FORKID);
+        -    if (nHashType < SIGHASH_ALL || nHashType > SIGHASH_SINGLE) {
+        +    if (!GetHashType(vchSig).hasSupportedBaseSigHashType()) {
+                 return false;
+            }
+
+    Sighash values for reference:
+        SIGHASH_ALL          = 0x01,
+        SIGHASH_NONE         = 0x02,
+        SIGHASH_SINGLE       = 0x03,
+        SIGHASH_BUG          = 0x20,   <-- Behavioral Change
+        SIGHASH_FORKID       = 0x40,
+        SIGHASH_ANYONECANPAY = 0x80,
+
+    hasSupportedBaseType is defined as:
+
+        bool hasSupportedBaseType() const {
+            BaseSigHashType baseType = getBaseType();
+            return baseType >= BaseSigHashType::ALL &&
+                   baseType <= BaseSigHashType::SINGLE;
+        }
+
+    and getBaseType() is:
+
+        BaseSigHashType getBaseType() const {
+            return BaseSigHashType(sigHash & 0x1f);
+        }
+
+    Call 0x20 the "SIGHASH_BUG" flag.
+
+    Before this change, only the two most significant bits (SIGHASH_ANYONECANPAY
+    and SIGHASH_FORKID) are masked out of the nHashType calculation, making use
+    of the SIGHASH_BUG flag invalid.
+
+    In the new code however, an insufficient mask of 0x1f is applied in order
+    to exclude these flags. The SIGHASH_BUG flag is now unchecked, and may be
+    set without invalidating the transaction.
+
+
+Tl;dr:
+
+    Most Bitcoin Cash scriptSigs will contain a hash type of 0x41:
+    0x41 = SIGHASH_ALL | SIGHASH_FORKID.
+
+    However, bitcoin-abc v0.17 will accept a scriptSig with an invalid type:
+    0x61 = SIGHASH_ALL | SIGHASH_FORKID | 0x20.
+
+    Other types using 0x20 are also a problem:
+    0x63 = SIGHASH_SINGLE | SIGHASH_FORKID | 0x20
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2
+
+iQEcBAEBCAAGBQJa4R2TAAoJEBt35LOs3O8mfwEIAMvovjPludTOecmlOQpm8zdT
+KiSqibwumPLfxNG6r4j+mUX0bpWB96tNnSurMidoAEFGAhHqDAo1uEHtgtjmyr90
+WHPIjnMRKvWn5yfMrVAKbMH/3Qcn8umKIll1nlFyf7wzH7CLwmKtWlgzj7eTzOr9
+HHZeuTK+edL5vA0GTxwW1kxtytZ4leGvhDCd/dbIYpGfFUPdSrQOsWX5F/QL7h8Y
+Zyg7DmiPJnG6xQRam8yypAvwxRIWrC7ntuOq2PJE/46fAx3KAXUKJ3hDmMiKehbK
+SqybLUIhZGx2bHXBFBRYhJWs0Faga7QS+8Aa41Djcg53cPBigR5ubo8fmIzmyYM=
+=E8gk
+-----END PGP SIGNATURE-----
